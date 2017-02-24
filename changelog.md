@@ -1,5 +1,73 @@
 # changelog
 
+## BIG NEWS
+With the next major release of Homebrewery, v3.0.0, this tool *will no longer support raw HTML input for brew code*. Most issues and errors users are having are because of this feature and it's become too taxing to help and fix these issues.
+
+All brews made previous to the release of v3.0.0 will still render normally.
+
+### Thursday, 19/01/2017 - v2.7.0
+- Fixed saving multiple authors and multiple systems on brew metadata (thanks u/PalaNolho re:282)
+- Adding in line highlight for new pages
+- Added in a simple brew lookup for admin
+
+
+### Saturday, 14/01/2017 - v2.7.0
+- Added a new Render Warning overlay. It detects situations where the brew may not be rendering correctly (wrong browser, browser is zoomed in...) and let's the user know
+
+
+### Sunday, 25/12/2016 - v2.7.0
+- Switching over to using Vitreum v4
+  - Removed gulp, all tasks are run through npm scripts
+- Updating docs for local dev
+- Removing support for Docker. I have never used it, nor will I ever test for it, so I don't want to continue to explictly support it on this repo. Feel free to make a fork and make it docker-able though :)
+- Changed icon for the metadata
+- Made links useable in footer (thanks u/Dustfinger1 re:249)
+- Added print media queries to remove box shadow on print (thanks u/dmmagic  re: 246)
+- Fixed realtime renderer not functioning if loaded with malformed html on load (thanks u/RattiganIV re:247)
+- Removed a lot of unused files in shared
+- vitreum v4 now lets me use codemirror as a pure node dependacy
+
+
+
+### Saturday, 03/12/2016 - v2.6.0
+- Added report back to the edit page
+- Changed metaeditor icon
+- Added a button to quickly share your brew to reddit :)
+- Disabled Partial Page Rendering unless your brew hits 75 pages or longer
+- The brew renderer will now try and use your first page to judge the page size of each of your brews. This allows you now to set landscape and other weird sizes and everthing should work fine :)
+- UI on the user page improved (thanks u/PalaNolho)
+- Fixed lists not breaking across columns (thanks u/tyson-nw)
+- Added a table of contents snippet (thanks u/tullisar)
+- Added a multicolumn snippet
+
+
+
+### Thursday, 01/12/2016
+- Added in a snippet for a split table
+- Added an account nav item to new page
+
+
+### Sunday, 27/11/2016 - v2.5.1
+- Fixed the column rendering on the new user page. Really should have tested that better
+- Added a hover tooltip to fully read the brew description
+- Made the brew items take up only 25% allowing you to view more per row.
+
+### Wednesday, 23/11/2016 - v2.5.0
+- Metadata can now be added to brews
+- Added a metadata editor onto the edit and new pages
+- Moved deleting a brew into the metadata editor
+- Added in account middleware
+- Can now search for brews by a specific author
+- Editing a brew in anyway while logged in will now add you to the list of authors
+- Added a new user page to see others published brews, as well as all of your own brews.
+- Added a new nav item for accessing your profile and logging in
+
+
+### Monday, 14/11/2016
+- Updated snippet bar style
+- You can now print from a new page without saving
+- Added the ability to use ctrl+p and ctrl+s to print and save respectively.
+
 ### Monday, 07/11/2016
 - Added final touches to the html validator and updating the rest of the branch
 - If anyone finds issues with the new HTML validator, please let me know. I hope this will bring a more consistent feel to Homebrewery rendering.

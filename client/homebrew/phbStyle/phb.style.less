@@ -15,7 +15,7 @@ body {
 	counter-reset : phb-page-numbers;
 }
 *{
-	-webkit-print-color-adjust: exact;
+	-webkit-print-color-adjust : exact;
 }
 .useSansSerif(){
 	font-family : ScalySans;
@@ -272,6 +272,7 @@ body {
 		position         : absolute;
 		bottom           : 0px;
 		left             : 0px;
+		z-index          : 100;
 		height           : 50px;
 		width            : 100%;
 		background-image : @footerAccentImage;
@@ -305,6 +306,7 @@ body {
 		position   : absolute;
 		right      : 80px;
 		bottom     : 32px;
+		z-index    : 150;
 		width      : 200px;
 		font-size  : 0.8em;
 		color      : #c9ad6a;
@@ -332,7 +334,7 @@ body {
 		-moz-column-break-after    : always;
 	}
 	//Avoid breaking up
-	p,ul,blockquote,table{
+	p,blockquote,table{
 		z-index                     : 15;
 		-webkit-column-break-inside : avoid;
 		column-break-inside         : avoid;
@@ -350,6 +352,10 @@ body {
 	ul ul,ol ol,ul ol,ol ul{
 		margin-bottom : 0px;
 		margin-left   : 1.5em;
+	}
+	li{
+		-webkit-column-break-inside : avoid;
+		column-break-inside         : avoid;
 	}
 }
 //*****************************
@@ -382,6 +388,11 @@ body {
 // *****************************/
 .phb.print{
 	blockquote{
+		box-shadow : none;
+	}
+}
+@media print {
+	.phb .descriptive, .phb blockquote{
 		box-shadow : none;
 	}
 }
@@ -445,4 +456,25 @@ body {
 }
 .phb pre+.descriptive{
 	margin-top : 8px;
+}
+//*****************************
+// *      TABLE OF CONTENTS
+// *****************************/
+.phb .toc{
+	-webkit-column-break-inside : avoid;
+	column-break-inside         : avoid;
+	a{
+		color           : black;
+		text-decoration : none;
+		&:hover{
+			text-decoration : underline;
+		}
+	}
+	ul{
+		padding-left    : 0;
+		list-style-type : none;
+	}
+	&>ul>li{
+		margin-bottom : 10px;
+	}
 }

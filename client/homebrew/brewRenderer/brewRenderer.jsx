@@ -1,13 +1,17 @@
-var React = require('react');
-var _ = require('lodash');
-var cx = require('classnames');
+const React = require('react');
+const _ = require('lodash');
+const cx = require('classnames');
 
-var Markdown = require('naturalcrit/markdown.js');
-var ErrorBar = require('./errorBar/errorBar.jsx');
+const Markdown = require('naturalcrit/markdown.js');
+const ErrorBar = require('./errorBar/errorBar.jsx');
 
-var PAGE_HEIGHT = 1056 + 30;
+//TODO: move to the brew renderer
+const RenderWarnings = require('homebrewery/renderWarnings/renderWarnings.jsx')
 
-var BrewRenderer = React.createClass({
+const PAGE_HEIGHT = 1056;
+const PPR_THRESHOLD = 50;
+
+const BrewRenderer = React.createClass({
 	getDefaultProps: function() {
 		return {
 			text : '',
@@ -15,16 +19,24 @@ var BrewRenderer = React.createClass({
 		};
 	},
 	getInitialState: function() {
+		const pages = this.props.text.split('\\page');
+
 		return {
 			viewablePageNumber: 0,
 			height : 0,
 			isMounted : false,
 
+			usePPR : true,
+
+			pages : pages,
+			usePPR : pages.length >= PPR_THRESHOLD,
+
 			errors : []
 		};
 	},
-	totalPages : 0,
 	height : 0,
+	pageHeight : PAGE_HEIGHT,
+	lastRender : <div></div>,
 
 	componentDidMount: function() {
 		this.updateSize();
@@ -34,7 +46,21 @@ var BrewRenderer = React.createClass({
 		window.removeEventListener("resize", this.updateSize);
 	},
 
+	componentWillReceiveProps: function(nextProps) {
+		if(this.refs.pages && this.refs.pages.firstChild) this.pageHeight = this.refs.pages.firstChild.clientHeight;
+
+		const pages = nextProps.text.split('\\page');
+		this.setState({
+			pages : pages,
+			usePPR : pages.length >= PPR_THRESHOLD
+		})
+	},
+
 	updateSize : function() {
+		setTimeout(()=>{
+			if(this.refs.pages && this.refs.pages.firstChild) this.pageHeight = this.refs.pages.firstChild.clientHeight;
+		}, 1);
+
 		this.setState({
 			height : this.refs.main.parentNode.clientHeight,
 			isMounted : true
@@ -43,11 +69,8 @@ var BrewRenderer = React.createClass({
 
 	handleScroll : function(e){
 		this.setState({
-			viewablePageNumber : Math.floor(e.target.scrollTop / PAGE_HEIGHT)
+			viewablePageNumber : Math.floor(e.target.scrollTop / this.pageHeight)
 		});
-	},
-	//Implement later
-	scrollToPage : function(pageNumber){
 	},
 
 	shouldRender : function(pageText, index){
@@ -66,7 +89,15 @@ var BrewRenderer = React.createClass({
 
 	renderPageInfo : function(){
 		return <div className='pageInfo'>
-			{this.state.viewablePageNumber + 1} / {this.totalPages}
+			{this.state.viewablePageNumber + 1} / {this.state.pages.length}
+		</div>
+	},
+
+	renderPPRmsg : function(){
+		if(!this.state.usePPR) return;
+
+		return <div className='ppr_msg'>
+			Partial Page Renderer enabled, because your brew is so large. May effect rendering.
 		</div>
 	},
 
@@ -81,16 +112,20 @@ var BrewRenderer = React.createClass({
 	},
 
 	renderPages : function(){
-		var pages = this.props.text.split('\\page');
-		this.totalPages = pages.length;
-
-		return _.map(pages, (page, index)=>{
-			if(this.shouldRender(page, index)){
-				return this.renderPage(page, index);
-			}else{
-				return this.renderDummyPage(index);
-			}
+		if(this.state.usePPR){
+			return _.map(this.state.pages, (page, index)=>{
+				if(this.shouldRender(page, index)){
+					return this.renderPage(page, index);
+				}else{
+					return this.renderDummyPage(index);
+				}
+			});
+		}
+		if(this.props.errors && this.props.errors.length) return this.lastRender;
+		this.lastRender = _.map(this.state.pages, (page, index)=>{
+			return this.renderPage(page, index);
 		});
+		return this.lastRender;
 	},
 
 	render : function(){
@@ -100,11 +135,13 @@ var BrewRenderer = React.createClass({
 			style={{height : this.state.height}}>
 
 			<ErrorBar errors={this.props.errors} />
+			<RenderWarnings />
 
-			<div className='pages'>
+			<div className='pages' ref='pages'>
 				{this.renderPages()}
 			</div>
 			{this.renderPageInfo()}
+			{this.renderPPRmsg()}
 		</div>
 	}
 });
