@@ -127,20 +127,24 @@ const BrewRenderer = createClass({
 	},
 
 	render : function(){
-		return <div className='brewRenderer'
-			onScroll={this.handleScroll}
-			ref='main'
-			style={{ height: this.state.height }}>
+		return (
+			<React.Fragment>
+				<div className='brewRenderer'
+					onScroll={this.handleScroll}
+					ref='main'
+					style={{ height: this.state.height }}>
 
-			<ErrorBar errors={this.props.errors} />
-			<RenderWarnings />
+					<ErrorBar errors={this.props.errors} />
+					<RenderWarnings />
 
-			<div className='pages' ref='pages'>
-				{this.renderPages()}
-			</div>
-			{this.renderPageInfo()}
-			{this.renderPPRmsg()}
-		</div>;
+					<div className='pages' ref='pages'>
+						{this.renderPages()}
+					</div>
+				</div>;
+				{this.renderPageInfo()}
+				{this.renderPPRmsg()}
+			</React.Fragment>
+		);
 	}
 });
 
