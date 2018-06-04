@@ -45,11 +45,10 @@ const EditPage = createClass({
 		return {
 			brew : this.props.brew,
 
-			isSaving    : false,
-			isPending   : false,
-			errors      : null,
-			htmlErrors  : Markdown.validate(this.props.brew.text),
-			lastUpdated : this.props.brew.updatedAt
+			isSaving   : false,
+			isPending  : false,
+			errors     : null,
+			htmlErrors : Markdown.validate(this.props.brew.text),
 		};
 	},
 	savedBrew : null,
@@ -62,9 +61,9 @@ const EditPage = createClass({
 			}
 		};
 
-		this.setState({
-			htmlErrors : Markdown.validate(this.state.brew.text)
-		});
+		this.setState((prevState)=>({
+			htmlErrors : Markdown.validate(prevState.brew.text)
+		}));
 
 		document.addEventListener('keydown', this.handleControlKeys);
 	},
@@ -91,12 +90,10 @@ const EditPage = createClass({
 	},
 
 	handleMetadataChange : function(metadata){
-		this.setState({
-			brew      : _.merge({}, this.state.brew, metadata),
+		this.setState((prevState)=>({
+			brew      : _.merge({}, prevState.brew, metadata),
 			isPending : true,
-		}, ()=>{
-			this.trySave();
-		});
+		}), ()=>this.trySave());
 
 	},
 
@@ -106,22 +103,16 @@ const EditPage = createClass({
 		let htmlErrors = this.state.htmlErrors;
 		if(htmlErrors.length) htmlErrors = Markdown.validate(text);
 
-		this.setState({
-			brew       : _.merge({}, this.state.brew, { text: text }),
+		this.setState((prevState)=>({
+			brew       : _.merge({}, prevState.brew, { text: text }),
 			isPending  : true,
 			htmlErrors : htmlErrors
-		});
-
-		this.trySave();
+		}), ()=>this.trySave());
 	},
 
 	hasChanges : function(){
-		if(this.savedBrew){
-			return !_.isEqual(this.state.brew, this.savedBrew);
-		} else {
-			return !_.isEqual(this.state.brew, this.props.brew);
-		}
-		return false;
+		const savedBrew = this.savedBrew ? this.savedBrew : this.props.brew;
+		return !_.isEqual(this.state.brew, savedBrew);
 	},
 
 	trySave : function(){
@@ -136,11 +127,11 @@ const EditPage = createClass({
 	save : function(){
 		if(this.debounceSave && this.debounceSave.cancel) this.debounceSave.cancel();
 
-		this.setState({
+		this.setState((prevState)=>({
 			isSaving   : true,
 			errors     : null,
-			htmlErrors : Markdown.validate(this.state.brew.text)
-		});
+			htmlErrors : Markdown.validate(prevState.brew.text)
+		}));
 
 		request
 			.put(`/api/update/${this.props.brew.editId}`)
@@ -153,9 +144,8 @@ const EditPage = createClass({
 				} else {
 					this.savedBrew = res.body;
 					this.setState({
-						isPending   : false,
-						isSaving    : false,
-						lastUpdated : res.body.updatedAt
+						isPending : false,
+						isSaving  : false,
 					});
 				}
 			});
@@ -173,7 +163,8 @@ const EditPage = createClass({
 				Oops!
 				<div className='errorContainer'>
 					Looks like there was a problem saving. <br />
-					Report the issue <a target='_blank' href={`https://github.com/stolksdorf/naturalcrit/issues/new?body=${encodeURIComponent(errMsg)}`}>
+					Report the issue <a target='_blank' rel='noopener noreferrer'
+						href={`https://github.com/stolksdorf/naturalcrit/issues/new?body=${encodeURIComponent(errMsg)}`}>
 						here
 					</a>.
 				</div>

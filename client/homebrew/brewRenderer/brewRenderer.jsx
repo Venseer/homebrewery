@@ -27,12 +27,8 @@ const BrewRenderer = createClass({
 			height             : 0,
 			isMounted          : false,
 
-			usePPR : true,
-
 			pages  : pages,
 			usePPR : pages.length >= PPR_THRESHOLD,
-
-			errors : []
 		};
 	},
 	height     : 0,
@@ -62,9 +58,9 @@ const BrewRenderer = createClass({
 	},
 
 	handleScroll : function(e){
-		this.setState({
-			viewablePageNumber : Math.floor(e.target.scrollTop / e.target.scrollHeight * this.state.pages.length)
-		});
+		this.setState((prevState)=>({
+			viewablePageNumber : Math.floor(e.target.scrollTop / e.target.scrollHeight * prevState.pages.length)
+		}));
 	},
 
 	shouldRender : function(pageText, index){
