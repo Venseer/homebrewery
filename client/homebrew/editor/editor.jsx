@@ -1,146 +1,400 @@
-const React = require('react');
-const createClass = require('create-react-class');
-const _ = require('lodash');
-const cx = require('classnames');
+/*eslint max-lines: ["warn", {"max": 500, "skipBlankLines": true, "skipComments": true}]*/
+import './editor.less';
+import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
+import dedent from 'dedent';
+import { EditorView } from '@codemirror/view';
 
-const CodeEditor = require('naturalcrit/codeEditor/codeEditor.jsx');
-const SnippetBar = require('./snippetbar/snippetbar.jsx');
-const MetadataEditor = require('./metadataEditor/metadataEditor.jsx');
+import CodeEditor from '@components/codeEditor/codeEditor.jsx';
+import SnippetBar from './snippetbar/snippetbar.jsx';
+import MetadataEditor from './metadataEditor/metadataEditor.jsx';
+import SettingsEditor from './settingsEditor/settingsEditor.jsx';
 
+const EDITOR_THEME_KEY = 'HB_editor_theme';
+const EDITOR_SETTINGS_KEY = 'HB_edit_settings';
 
-const splice = function(str, index, inject){
-	return str.slice(0, index) + inject + str.slice(index);
-};
+import defaultCM5Theme from '@themes/codeMirror/default.js';
+import darkbrewery from '@themes/codeMirror/darkbrewery.js';
+import cm5Themes from 'codemirror-5-themes';
 
-const SNIPPETBAR_HEIGHT = 25;
+const themes = { default: defaultCM5Theme, ...cm5Themes, darkbrewery };
 
-const Editor = createClass({
-	getDefaultProps : function() {
-		return {
-			value    : '',
-			onChange : ()=>{},
+const EditorThemes = Object.entries(themes)
+	.filter(([name, value])=>Array.isArray(value) && !name.endsWith('Init') && !name.endsWith('Style'))
+	.map(([name])=>name);
 
-			metadata         : {},
-			onMetadataChange : ()=>{},
-		};
-	},
-	getInitialState : function() {
-		return {
-			showMetadataEditor : false
-		};
-	},
-	cursorPosition : {
-		line : 0,
-		ch   : 0
-	},
+const themeNames = Object.entries(themes)
+  .filter(([name, value])=>Array.isArray(value) &&
+    !name.endsWith('Init') &&
+    !name.endsWith('Style')
+  )
+  .map(([name])=>name);
 
-	componentDidMount : function() {
-		this.updateEditorSize();
-		this.highlightPageLines();
-		window.addEventListener('resize', this.updateEditorSize);
-	},
-	componentWillUnmount : function() {
-		window.removeEventListener('resize', this.updateEditorSize);
-	},
+const EditorThemeNameList = [
+	'default',
+	...themeNames
+    .filter((name)=>name !== 'default')
+    .sort((a, b)=>a.localeCompare(b))
+];
 
-	updateEditorSize : function() {
-		let paneHeight = this.refs.main.parentNode.clientHeight;
-		paneHeight -= SNIPPETBAR_HEIGHT + 1;
-		this.refs.codeEditor.codeMirror.setSize(null, paneHeight);
-	},
+//const PAGEBREAK_REGEX_V3 = /^(?=\\page(?:break)?(?: *{[^\n{}]*})?$)/m;
+//const SNIPPETBREAK_REGEX_V3 = /^\\snippet\ .*$/;
+const DEFAULT_STYLE_TEXT = dedent`
+				/*=======---  Example CSS styling  ---=======*/
+				/* Any CSS here will apply to your document! */
 
-	handleTextChange : function(text){
-		this.props.onChange(text);
-	},
-	handleCursorActivty : function(curpos){
-		this.cursorPosition = curpos;
-	},
-	handleInject : function(injectText){
-		const lines = this.props.value.split('\n');
-		lines[this.cursorPosition.line] = splice(lines[this.cursorPosition.line], this.cursorPosition.ch, injectText);
+				.myExampleClass {
+					color: black;
+				}`;
 
-		this.handleTextChange(lines.join('\n'));
-		this.refs.codeEditor.setCursorPosition(this.cursorPosition.line, this.cursorPosition.ch  + injectText.length);
-	},
-	handgleToggle : function(){
-		this.setState({
-			showMetadataEditor : !this.state.showMetadataEditor
+const DEFAULT_SNIPPET_TEXT = dedent`
+				\snippet example snippet
+				
+				The text between \`\snippet title\` lines will become a snippet of name \`title\` as this example provides.
+				
+				This snippet is accessible in the brew tab, and will be inherited if the brew is used as a theme.
+`;
+let isJumping = false;
+let jumpSource = null;
+
+const Editor = forwardRef(
+	(
+		{
+			brew = {},
+
+			onBrewChange = ()=>{},
+			reportError = ()=>{},
+
+			onCursorPageChange = ()=>{},
+			onViewPageChange = ()=>{},
+
+			renderer = 'legacy',
+
+			moveBrew,
+			moveSource,
+			liveScroll,
+
+			setMoveArrows,
+			updateBrew,
+			showEditButtons,
+			themeBundle,
+			userThemes,
+
+			currentEditorCursorPageNum = 1,
+			currentEditorViewPageNum = 1,
+			currentBrewRendererPageNum = 1,
+		},
+		ref,
+	)=>{
+		const [view, setView] = useState('text'); // 'text', 'style', 'meta', 'snippet'
+		const [snippetBarHeight, setSnippetBarHeight] = useState(26);
+		const [isDark, setIsDark] = useState(false);
+		const [editorSettings, setEditorSettings] = useState({
+			autoCloseBrackets : true,
+			showImagePreviews : true,
+			activeLineShading : true,
+			lineNumbers       : true,
+			fontSize          : 1,
+			editorTheme       : 'default',
 		});
-	},
 
-	getCurrentPage : function(){
-		const lines = this.props.value.split('\n').slice(0, this.cursorPosition.line + 1);
-		return _.reduce(lines, (r, line)=>{
-			if(line.indexOf('\\page') !== -1) r++;
-			return r;
-		}, 1);
-	},
+		const editor = useRef(null);
+		const codeEditor = useRef(null);
+		const throttleBrewMove = useRef(null);
 
-	highlightPageLines : function(){
-		if(!this.refs.codeEditor) return;
-		const codeMirror = this.refs.codeEditor.codeMirror;
+		const isText = ()=>isView('text');
+		const isStyle = ()=>isView('style');
+		const isMeta = ()=>isView('meta');
+		const isSnip = ()=>isView('snippet');
+		const isSettings = ()=>isView('settings');
 
-		const lineNumbers = _.reduce(this.props.value.split('\n'), (r, line, lineNumber)=>{
-			if(line.indexOf('\\page') !== -1){
-				codeMirror.addLineClass(lineNumber, 'background', 'pageLine');
-				r.push(lineNumber);
-			}
-			return r;
+		const isView = (name)=>view === name;
+
+		useEffect(()=>{
+			const brewRenderer = document.getElementById('BrewRenderer');
+			brewRenderer.onload = ()=>brewRenderer.contentDocument?.addEventListener('keydown', handleControlKeys);
+			document.addEventListener('keydown', handleControlKeys);
+
+			const localEditorTheme = window.localStorage.getItem(EDITOR_THEME_KEY);
+			if(localEditorTheme && EditorThemes.includes(localEditorTheme)) {
+				setEditorSettings({ ...editorSettings, editorTheme: localEditorTheme });
+			} else setEditorSettings({ ...editorSettings, editorTheme: 'default' });
+			const localEditorSettings = window.localStorage.getItem(EDITOR_SETTINGS_KEY);
+			if(localEditorSettings) setEditorSettings(JSON.parse(localEditorSettings));
+			const snippetBar = document.querySelector('.editor > .snippetBar');
+			if(!snippetBar) return;
+
+			const resizeObserver = new ResizeObserver((entries)=>{
+				const height = document.querySelector('.editor > .snippetBar').offsetHeight;
+				setSnippetBarHeight(height);
+			});
+			resizeObserver.observe(snippetBar);
+
+			return ()=>{
+				if(resizeObserver) resizeObserver.disconnect();
+			};
 		}, []);
-		return lineNumbers;
-	},
 
+		useEffect(()=>{ if(moveBrew) brewJump(); }, [moveBrew]);
+		useEffect(()=>{ if(moveSource) sourceJump(); }, [moveSource]);
+		useEffect(()=>{ if(liveScroll) sourceJump(currentBrewRendererPageNum, false); }, [currentBrewRendererPageNum, liveScroll]);
+		useEffect(()=>{ if(liveScroll) brewJump(currentEditorViewPageNum, false); }, [currentEditorViewPageNum, liveScroll]);
+		useEffect(()=>{ if(liveScroll) brewJump(currentEditorCursorPageNum, false); }, [currentEditorCursorPageNum, liveScroll]);
 
-	brewJump : function(){
-		const currentPage = this.getCurrentPage();
-		window.location.hash = `p${currentPage}`;
-	},
+		const handleFormatCode = ()=>{
+			codeEditor.current?.formatCode();
+		};
 
-	//Called when there are changes to the editor's dimensions
-	update : function(){
-		this.refs.codeEditor.updateSize();
-	},
+		const handleControlKeys = (e)=>{
+			if(!(e.ctrlKey && e.metaKey && e.shiftKey)) return;
+			const LEFTARROW_KEY = 37;
+			const RIGHTARROW_KEY = 39;
+			if(e.keyCode == RIGHTARROW_KEY) brewJump();
+			if(e.keyCode == LEFTARROW_KEY) sourceJump();
+			if(e.keyCode == LEFTARROW_KEY || e.keyCode == RIGHTARROW_KEY) {
+				e.stopPropagation();
+				e.preventDefault();
+			}
+		};
 
-	renderMetadataEditor : function(){
-		if(!this.state.showMetadataEditor) return;
-		return <MetadataEditor
-			metadata={this.props.metadata}
-			onChange={this.props.onMetadataChange}
-		/>;
-	},
+		const updateCurrentCursorPage = (pageNumber)=>{
+			onCursorPageChange(pageNumber);
+		};
 
-	render : function(){
-		this.highlightPageLines();
+		const updateCurrentViewPage = (pageNumber)=>{
+			onViewPageChange(pageNumber);
+		};
+
+		const handleInject = (injectText)=>{
+			codeEditor.current?.injectText(injectText);
+		};
+
+		const handleViewChange = (newView)=>{
+			setMoveArrows(newView === 'text');
+			setView(newView);
+		};
+		useEffect(()=>{
+			codeEditor.current?.focus();
+		}, [view]);
+
+		const brewJump = (targetPage = currentEditorCursorPageNum, smooth = true)=>{
+			if(!window || !isText() || isJumping || jumpSource === 'source') return;
+
+			const brewRenderer =
+				window.frames['BrewRenderer'].contentDocument.getElementsByClassName('brewRenderer')[0];
+
+			const currentPos = brewRenderer.scrollTop;
+
+			const targetPos = window.frames['BrewRenderer'].contentDocument
+				.getElementById(`p${targetPage}`)
+				.getBoundingClientRect().top;
+
+			let scrollingTimeout;
+
+			const checkIfScrollComplete = ()=>{// Prevent interrupting a scroll in progress if user clicks multiple times
+				clearTimeout(scrollingTimeout);// Reset the timer every time a scroll event occurs
+
+				scrollingTimeout = setTimeout(()=>{
+					isJumping = false;
+					jumpSource = null;
+
+					brewRenderer.removeEventListener('scroll', checkIfScrollComplete);
+				}, 150);// If 150 ms pass without a brewRenderer scroll event, assume scrolling is done
+			};
+
+			isJumping = true;
+			jumpSource = 'brew';
+
+			checkIfScrollComplete();
+			brewRenderer.addEventListener('scroll', checkIfScrollComplete);
+
+			if(smooth) {
+				const bouncePos = targetPos >= 0 ? -30 : 30; //Do a little bounce before scrolling
+				const now = Date.now();
+
+				if(now - throttleBrewMove.current >= 500) {
+					throttleBrewMove.current = now;
+
+					brewRenderer.scrollTo({ top: currentPos + bouncePos, behavior: 'smooth' });
+
+					setTimeout(()=>{
+						brewRenderer.scrollTo({	top: currentPos + targetPos, behavior: 'smooth', block: 'start' });
+					}, 100);
+				}
+			} else {
+				brewRenderer.scrollTo({ top : currentPos + targetPos, behavior : 'instant', block : 'start',
+				});
+			}
+		};
+
+		const sourceJump = (targetPage = currentBrewRendererPageNum, smooth = true)=>{
+			if(!isText() || isJumping || jumpSource === 'brew') return;
+
+			if(!codeEditor.current) return;
+			jumpSource = 'source';
+
+			codeEditor.current.scrollToPage(targetPage);
+			setTimeout(()=>{
+				jumpSource = null;
+			}, 200);
+		};
+
+		const updateEditorTheme = (newTheme)=>{
+			window.localStorage.setItem(EDITOR_THEME_KEY, newTheme);
+			setEditorSettings({ ...editorSettings, editorTheme: newTheme });
+		};
+
+		const updateEditorSettings = (newEditorSettings)=>{
+			window.localStorage.setItem(EDITOR_SETTINGS_KEY, JSON.stringify(newEditorSettings));
+			setEditorSettings(newEditorSettings);
+		};
+
+		const renderEditor = ()=>{
+			if(isText()) {
+				return (
+					<>
+						<CodeEditor
+							key='codeEditor'
+							ref={codeEditor}
+							language='gfm'
+							tab='brewText'
+							view={view}
+							value={brew.text}
+							onChange={onBrewChange('text')}
+							onCursorChange={(page)=>updateCurrentCursorPage(page)}
+							onViewChange={(page)=>updateCurrentViewPage(page)}
+							editorTheme={editorSettings.editorTheme}
+							onThemeChange={setIsDark}
+							renderer={brew.renderer}
+							style={{ height: `calc(100% - ${snippetBarHeight}px)` }}
+							settings={editorSettings}
+						/>
+					</>
+				);
+			}
+			if(isStyle()) {
+				return (
+					<>
+						<CodeEditor
+							key='codeEditor'
+							ref={codeEditor}
+							language='css'
+							tab='brewStyles'
+							view={view}
+							value={brew.style ?? DEFAULT_STYLE_TEXT}
+							onChange={onBrewChange('style')}
+							editorTheme={editorSettings.editorTheme}
+							onThemeChange={setIsDark}
+							renderer={brew.renderer}
+							style={{ height: `calc(100% - ${snippetBarHeight}px)` }}
+							settings={editorSettings}
+						/>
+					</>
+				);
+			}
+			if(isSnip()) {
+				if(!brew.snippets) {
+					brew.snippets = DEFAULT_SNIPPET_TEXT;
+				}
+				return (
+					<>
+						<CodeEditor
+							key='codeEditor'
+							ref={codeEditor}
+							language='gfm'
+							tab='brewSnippets'
+							view={view}
+							value={brew.snippets}
+							onChange={onBrewChange('snippets')}
+							enableFolding={true}
+							editorTheme={editorSettings.editorTheme}
+							onThemeChange={setIsDark}
+							renderer={brew.renderer}
+							style={{ height: `calc(100% - 25px)` }}
+							settings={editorSettings}
+						/>
+					</>
+				);
+			}
+			if(isMeta()) {
+				return (
+					<>
+						<CodeEditor key='codeEditor' tab='brewMetadata' editorTheme={editorSettings.editorTheme} onThemeChange={setIsDark} view={view} style={{ display: 'none' }} settings={editorSettings} />
+						<MetadataEditor
+							metadata={brew}
+							themeBundle={themeBundle}
+							onChange={onBrewChange('metadata')}
+							reportError={reportError}
+							userThemes={userThemes}
+						/>
+					</>
+				);
+			}
+			if(isSettings()){
+				return (
+					<>
+						<CodeEditor
+							key='codeEditor'
+							tab='brewSettings' //necessary or the brew object loses its contents, culprit possibly on the tab dependent useEffect in codeEditor.jsx
+							view={view}
+							style={{ display: 'none' }}
+							editorTheme={editorSettings.editorTheme}
+							onThemeChange={setIsDark}
+							settings={editorSettings}
+						/>
+						<SettingsEditor
+							settings={editorSettings}
+							EditorThemeNameList={EditorThemeNameList}
+							updateSettings={updateEditorSettings}
+						/>
+					</>
+				);
+			}
+		};
+
+		const redo = ()=>codeEditor.current?.redo();
+		const historySize = ()=>codeEditor.current?.historySize();
+		const undo = ()=>codeEditor.current?.undo();
+		const foldCode = ()=>codeEditor.current?.foldAll();
+		const unfoldCode = ()=>codeEditor.current?.unfoldAll();
+
+		//Called when there are changes to the editor's dimensions
+		const update = ()=>{};
+
+		useImperativeHandle(ref, ()=>({
+			update,
+			undo,
+			redo,
+			foldCode,
+			unfoldCode,
+			historySize,
+		}));
 		return (
-			<div className='editor' ref='main'>
+			<div className={`editor${isDark ? ' darkMode' : ''}`} ref={editor}>
 				<SnippetBar
-					brew={this.props.value}
-					onInject={this.handleInject}
-					onToggle={this.handgleToggle}
-					showmeta={this.state.showMetadataEditor} />
-				{this.renderMetadataEditor()}
-				<CodeEditor
-					ref='codeEditor'
-					wrap={true}
-					language='gfm'
-					value={this.props.value}
-					onChange={this.handleTextChange}
-					onCursorActivity={this.handleCursorActivty} />
+					brew={brew}
+					view={view}
+					onViewChange={handleViewChange}
+					onInject={handleInject}
+					showEditButtons={showEditButtons}
+					renderer={renderer}
+					theme={brew.theme}
+					undo={undo}
+					redo={redo}
+					foldCode={foldCode}
+					unfoldCode={unfoldCode}
+					formatCode={isStyle() ? handleFormatCode : null}
+					historySize={historySize()}
+					currentEditorTheme={editorSettings.editorTheme}
+					updateEditorTheme={updateEditorTheme}
+					themeBundle={themeBundle}
+					cursorPos={codeEditor.current?.getCursorPosition() || {}}
+					updateBrew={updateBrew}
+				/>
 
-				{/*
-				<div className='brewJump' onClick={this.brewJump}>
-					<i className='fa fa-arrow-right' />
-				</div>
-				*/}
+				{renderEditor()}
 			</div>
 		);
 	}
-});
+);
 
-module.exports = Editor;
-
-
-
-
-
-
+export default Editor;

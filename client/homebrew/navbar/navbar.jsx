@@ -1,50 +1,28 @@
-const React = require('react');
-const createClass = require('create-react-class');
-const _ = require('lodash');
+import './navbar.less';
+import React from 'react';
 
-const Nav = require('naturalcrit/nav/nav.jsx');
+import Nav from './nav.jsx';
+import PatreonNavItem from './patreon.navitem.jsx';
 
-const Navbar = createClass({
-	getInitialState : function() {
-		return {
-			//showNonChromeWarning : false,
-			ver : '0.0.0'
-		};
-	},
+const Navbar = ({ children })=>{
+	const version = global.version || '0.0.0';
 
-	componentDidMount : function() {
-		//const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
-		this.setState({
-			//showNonChromeWarning : !isChrome,
-			ver : window.version
-		});
-	},
-
-	/*
-	renderChromeWarning : function(){
-		if(!this.state.showNonChromeWarning) return;
-		return <Nav.item className='warning' icon='fa-exclamation-triangle'>
-			Optimized for Chrome
-			<div className='dropdown'>
-				If you are experiencing rendering issues, use Chrome instead
-			</div>
-		</Nav.item>
-	},
-*/
-	render : function(){
-		return <Nav.base>
+	return (
+		<Nav.base>
 			<Nav.section>
 				<Nav.logo />
 				<Nav.item href='/' className='homebrewLogo'>
 					<div>The Homebrewery</div>
 				</Nav.item>
-				<Nav.item>{`v${this.state.ver}`}</Nav.item>
-
-				{/*this.renderChromeWarning()*/}
+				<Nav.item newTab={true} href='/changelog' color='purple' icon='far fa-file-alt'>
+					{`v${version}`}
+				</Nav.item>
+				<PatreonNavItem />
+				{/* this.renderChromeWarning() */}
 			</Nav.section>
-			{this.props.children}
-		</Nav.base>;
-	}
-});
+			{children}
+		</Nav.base>
+	);
+};
 
-module.exports = Navbar;
+export default Navbar;

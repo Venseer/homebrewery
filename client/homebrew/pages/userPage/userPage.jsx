@@ -1,76 +1,64 @@
-const React = require('react');
-const createClass = require('create-react-class');
-const _     = require('lodash');
-const cx    = require('classnames');
+import React, { useState } from 'react';
+import _ from 'lodash';
 
-const Nav = require('naturalcrit/nav/nav.jsx');
-const Navbar = require('../../navbar/navbar.jsx');
+import ListPage from '../basePages/listPage/listPage.jsx';
 
-const RecentNavItem = require('../../navbar/recent.navitem.jsx');
-const Account = require('../../navbar/account.navitem.jsx');
-const BrewItem = require('./brewItem/brewItem.jsx');
+import Nav from '@navbar/nav.jsx';
+import Navbar from '@navbar/navbar.jsx';
+import RecentNavItems from '@navbar/recent.navitem.jsx';
+const { both: RecentNavItem } = RecentNavItems;
+import Account from '@navbar/account.navitem.jsx';
+import NewBrew from '@navbar/newbrew.navitem.jsx';
+import HelpNavItem from '@navbar/help.navitem.jsx';
+import ErrorNavItem from '@navbar/error-navitem.jsx';
+import VaultNavitem from '@navbar/vault.navitem.jsx';
 
-// const brew = {
-// 	title   : 'SUPER Long title woah now',
-// 	authors : []
-// };
+const UserPage = (props)=>{
+	props = {
+		username : '',
+		brews    : [],
+		query    : '',
+		...props
+	};
 
-//const BREWS = _.times(25, ()=>{ return brew;});
+	const [error, setError] = useState(null);
 
+	const usernameWithS = props.username + (props.username.endsWith('s') ? `’` : `’s`);
+	const groupedBrews = _.groupBy(props.brews, (brew)=>brew.published ? 'published' : 'private');
 
-const UserPage = createClass({
-	getDefaultProps : function() {
-		return {
-			username : '',
-			brews    : []
-		};
-	},
+	const brewCollection = [
+		{
+			title : `${usernameWithS} published brews`,
+			class : 'published',
+			brews : groupedBrews.published || []
+		},
+		...(props.username === global.account?.username ? [{
+			title : `${usernameWithS} unpublished brews`,
+			class : 'unpublished',
+			brews : groupedBrews.private || []
+		}] : [])
+	];
 
-	renderBrews : function(brews){
-		if(!brews || !brews.length) return <div className='noBrews'>No Brews.</div>;
+	const clearError = ()=>{
+		setError(null);
+	};
 
-		const sortedBrews = _.sortBy(brews, (brew)=>{ return brew.title; });
+	const navItems = (
+		<Navbar>
+			<Nav.section>
+				{error && (<ErrorNavItem error={error} clearError={clearError}></ErrorNavItem>)}
+				<NewBrew />
+				<HelpNavItem />
+				<VaultNavitem />
+				<RecentNavItem />
+				<Account />
+			</Nav.section>
+		</Navbar>
+	);
 
-		return _.map(sortedBrews, (brew, idx)=>{
-			return <BrewItem brew={brew} key={idx}/>;
-		});
-	},
+	return (
+		<ListPage brewCollection={brewCollection}  navItems={navItems} query={props.query} reportError={(err)=>setError(err)} />
+	);
+};
 
-	getSortedBrews : function(){
-		return _.groupBy(this.props.brews, (brew)=>{
-			return (brew.published ? 'published' : 'private');
-		});
-	},
-
-	renderPrivateBrews : function(privateBrews){
-		if(!privateBrews || !privateBrews.length) return;
-
-		return [
-			<h1>{this.props.username}'s unpublished brews</h1>,
-			this.renderBrews(privateBrews)
-		];
-	},
-
-	render : function(){
-		const brews = this.getSortedBrews();
-
-		return <div className='userPage page'>
-			<Navbar>
-				<Nav.section>
-					<RecentNavItem.both />
-					<Account />
-				</Nav.section>
-			</Navbar>
-
-			<div className='content'>
-				<div className='phb'>
-					<h1>{this.props.username}'s brews</h1>
-					{this.renderBrews(brews.published)}
-					{this.renderPrivateBrews(brews.private)}
-				</div>
-			</div>
-		</div>;
-	}
-});
-
-module.exports = UserPage;
+export default UserPage;

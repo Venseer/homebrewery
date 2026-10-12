@@ -1,222 +1,61 @@
-const React = require('react');
-const createClass = require('create-react-class');
-const _ = require('lodash');
-const cx = require('classnames');
-const request = require('superagent');
+import './editPage.less';
 
-const Nav = require('naturalcrit/nav/nav.jsx');
-const Navbar = require('../../navbar/navbar.jsx');
+import React                 from 'react';
+import request               from '../../utils/request-middleware.js';
+import _                     from 'lodash';
+import EditorPage            from '../basePages/editPage/editorPage.jsx';
+import { DEFAULT_BREW_LOAD } from '../../../../server/brewDefaults.js';
 
-const ReportIssue = require('../../navbar/issue.navitem.jsx');
-const PrintLink = require('../../navbar/print.navitem.jsx');
-const Account = require('../../navbar/account.navitem.jsx');
-//const RecentlyEdited = require('../../navbar/recent.navitem.jsx').edited;
+// Page specific imports
+import { gzipSync, strToU8 }             from 'fflate';
+import { updateHistory, versionHistoryGarbageCollection } from '../../utils/versionHistory.js';
 
-const SplitPane = require('naturalcrit/splitPane/splitPane.jsx');
-const Editor = require('../../editor/editor.jsx');
-const BrewRenderer = require('../../brewRenderer/brewRenderer.jsx');
+const EditPage = (props)=>{
+	props = {
+		brew : DEFAULT_BREW_LOAD,
+		...props
+	};
 
-const Markdown = require('naturalcrit/markdown.js');
+	const save = async (brew, saveToGoogle)=>{
+		await updateHistory(brew).catch(console.error);
+		await versionHistoryGarbageCollection().catch(console.error);
 
-const SAVE_TIMEOUT = 3000;
+		const compressedBrew = gzipSync(strToU8(JSON.stringify(brew)));
+		const transfer = saveToGoogle === _.isNil(brew.googleId);
+		const params = transfer ? `?${saveToGoogle ? 'saveToGoogle' : 'removeFromGoogle'}=true` : '';
 
+		const res = await request
+			.put(`/api/update/${brew.editId}${params}`)
+			.set('Content-Encoding', 'gzip')
+			.set('Content-Type', 'application/json')
+			.send(compressedBrew);
 
-const EditPage = createClass({
-	getDefaultProps : function() {
-		return {
-			brew : {
-				text      : '',
-				shareId   : null,
-				editId    : null,
-				createdAt : null,
-				updatedAt : null,
-
-				title       : '',
-				description : '',
-				tags        : '',
-				published   : false,
-				authors     : [],
-				systems     : []
-			}
-		};
-	},
-
-	getInitialState : function() {
-		return {
-			brew : this.props.brew,
-
-			isSaving   : false,
-			isPending  : false,
-			errors     : null,
-			htmlErrors : Markdown.validate(this.props.brew.text),
-		};
-	},
-	savedBrew : null,
-
-	componentDidMount : function(){
-		this.trySave();
-		window.onbeforeunload = ()=>{
-			if(this.state.isSaving || this.state.isPending){
-				return 'You have unsaved changes!';
-			}
+		const updatedFields = {
+			googleId : res.body.googleId ?? null, //TODO: investigate if we can set googleId:null in server/update instead of undefined
+			editId   : res.body.editId,           //then, editPage can just apply res.body instead of breaking out these fields.
+			shareId  : res.body.shareId,
+			version  : res.body.version
 		};
 
-		this.setState((prevState)=>({
-			htmlErrors : Markdown.validate(prevState.brew.text)
-		}));
+		return updatedFields;
+	};
 
-		document.addEventListener('keydown', this.handleControlKeys);
-	},
-	componentWillUnmount : function() {
-		window.onbeforeunload = function(){};
-		document.removeEventListener('keydown', this.handleControlKeys);
-	},
+	const onSaveSuccess = (savedBrew)=>{
+		history.replaceState(null, null, `/edit/${savedBrew.editId}`);;
+	};
 
+	return (
+		<EditorPage
+			useLocalStorage     = {false}
+			sandbox             = {false}
+			showFloatingButtons = {false}
+			showEditorButtons   = {true}
+			pageName            = {'editPage'}
+			brew                = {props.brew}
+			userThemes          = {props.userThemes}
+			save                = {save}
+			onSaveSuccess       = {onSaveSuccess}
+		></EditorPage>);
+};
 
-	handleControlKeys : function(e){
-		if(!(e.ctrlKey || e.metaKey)) return;
-		const S_KEY = 83;
-		const P_KEY = 80;
-		if(e.keyCode == S_KEY) this.save();
-		if(e.keyCode == P_KEY) window.open(`/print/${this.props.brew.shareId}?dialog=true`, '_blank').focus();
-		if(e.keyCode == P_KEY || e.keyCode == S_KEY){
-			e.stopPropagation();
-			e.preventDefault();
-		}
-	},
-
-	handleSplitMove : function(){
-		this.refs.editor.update();
-	},
-
-	handleMetadataChange : function(metadata){
-		this.setState((prevState)=>({
-			brew      : _.merge({}, prevState.brew, metadata),
-			isPending : true,
-		}), ()=>this.trySave());
-
-	},
-
-	handleTextChange : function(text){
-
-		//If there are errors, run the validator on everychange to give quick feedback
-		let htmlErrors = this.state.htmlErrors;
-		if(htmlErrors.length) htmlErrors = Markdown.validate(text);
-
-		this.setState((prevState)=>({
-			brew       : _.merge({}, prevState.brew, { text: text }),
-			isPending  : true,
-			htmlErrors : htmlErrors
-		}), ()=>this.trySave());
-	},
-
-	hasChanges : function(){
-		const savedBrew = this.savedBrew ? this.savedBrew : this.props.brew;
-		return !_.isEqual(this.state.brew, savedBrew);
-	},
-
-	trySave : function(){
-		if(!this.debounceSave) this.debounceSave = _.debounce(this.save, SAVE_TIMEOUT);
-		if(this.hasChanges()){
-			this.debounceSave();
-		} else {
-			this.debounceSave.cancel();
-		}
-	},
-
-	save : function(){
-		if(this.debounceSave && this.debounceSave.cancel) this.debounceSave.cancel();
-
-		this.setState((prevState)=>({
-			isSaving   : true,
-			errors     : null,
-			htmlErrors : Markdown.validate(prevState.brew.text)
-		}));
-
-		request
-			.put(`/api/update/${this.props.brew.editId}`)
-			.send(this.state.brew)
-			.end((err, res)=>{
-				if(err){
-					this.setState({
-						errors : err,
-					});
-				} else {
-					this.savedBrew = res.body;
-					this.setState({
-						isPending : false,
-						isSaving  : false,
-					});
-				}
-			});
-	},
-
-	renderSaveButton : function(){
-		if(this.state.errors){
-			let errMsg = '';
-			try {
-				errMsg += `${this.state.errors.toString()}\n\n`;
-				errMsg += `\`\`\`\n${JSON.stringify(this.state.errors.response.error, null, '  ')}\n\`\`\``;
-			} catch (e){}
-
-			return <Nav.item className='save error' icon='fa-warning'>
-				Oops!
-				<div className='errorContainer'>
-					Looks like there was a problem saving. <br />
-					Report the issue <a target='_blank' rel='noopener noreferrer'
-						href={`https://github.com/stolksdorf/naturalcrit/issues/new?body=${encodeURIComponent(errMsg)}`}>
-						here
-					</a>.
-				</div>
-			</Nav.item>;
-		}
-
-		if(this.state.isSaving){
-			return <Nav.item className='save' icon='fa-spinner fa-spin'>saving...</Nav.item>;
-		}
-		if(this.state.isPending && this.hasChanges()){
-			return <Nav.item className='save' onClick={this.save} color='blue' icon='fa-save'>Save Now</Nav.item>;
-		}
-		if(!this.state.isPending && !this.state.isSaving){
-			return <Nav.item className='save saved'>saved.</Nav.item>;
-		}
-	},
-	renderNavbar : function(){
-		return <Navbar>
-			<Nav.section>
-				<Nav.item className='brewTitle'>{this.state.brew.title}</Nav.item>
-			</Nav.section>
-			<Nav.section>
-				{this.renderSaveButton()}
-				{/*<RecentlyEdited brew={this.props.brew} />*/}
-				<ReportIssue />
-				<Nav.item newTab={true} href={`/share/${this.props.brew.shareId}`} color='teal' icon='fa-share-alt'>
-					Share
-				</Nav.item>
-				<PrintLink shareId={this.props.brew.shareId} />
-				<Account />
-			</Nav.section>
-		</Navbar>;
-	},
-
-	render : function(){
-		return <div className='editPage page'>
-			{this.renderNavbar()}
-
-			<div className='content'>
-				<SplitPane onDragFinish={this.handleSplitMove} ref='pane'>
-					<Editor
-						ref='editor'
-						value={this.state.brew.text}
-						onChange={this.handleTextChange}
-						metadata={this.state.brew}
-						onMetadataChange={this.handleMetadataChange}
-					/>
-					<BrewRenderer text={this.state.brew.text} errors={this.state.htmlErrors} />
-				</SplitPane>
-			</div>
-		</div>;
-	}
-});
-
-module.exports = EditPage;
+export default EditPage;

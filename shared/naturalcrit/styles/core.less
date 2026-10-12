@@ -1,50 +1,41 @@
 
-@import 'naturalcrit/styles/reset.less';
-//@import 'naturalcrit/styles/elements.less';
-@import 'naturalcrit/styles/animations.less';
-@import 'naturalcrit/styles/colors.less';
-@import 'naturalcrit/styles/tooltip.less';
-@font-face {
-	font-family : CodeLight;
-	src         : url('/assets/naturalcrit/styles/CODE Light.otf');
-}
-@font-face {
-	font-family : CodeBold;
-	src         : url('/assets/naturalcrit/styles/CODE Bold.otf');
-}
-html,body, #reactRoot{
+@import './reset.less';
+//@import './elements.less';
+@import './animations.less';
+@import './colors.less';
+@import './tooltip.less';
+@import './fonts/fonts.css';
+html,body, #reactRoot {
 	height      : 100vh;
 	min-height  : 100vh;
 	margin      : 0;
 	font-family : 'Open Sans', sans-serif;
 }
-*{
-	box-sizing : border-box;
-}
-button{
-	.button();
-}
-.button(@backgroundColor : @green){
+* { box-sizing : border-box; }
+.colorButton(@backgroundColor : @green) {
 	.animate(background-color);
 	display          : inline-block;
 	padding          : 0.6em 1.2em;
-	cursor           : pointer;
-	background-color : @backgroundColor;
 	font-family      : 'Open Sans', sans-serif;
 	font-size        : 0.8em;
 	font-weight      : 800;
 	color            : white;
-	text-decoration  : none;
 	text-transform   : uppercase;
+	text-decoration  : none;
+	cursor           : pointer;
+	background-color : @backgroundColor;
 	border           : none;
-	outline          : none;
-	&:hover{
-		background-color : darken(@backgroundColor, 5%);
-	}
-	&:active{
-		background-color : darken(@backgroundColor, 10%);
-	}
-	&:disabled{
+	&:hover { background-color : darken(@backgroundColor, 5%); }
+	&:active { background-color : darken(@backgroundColor, 10%); }
+	&:disabled {
+		cursor           : not-allowed;
 		background-color : @silver !important;
 	}
+}
+.ellipsis() {
+	overflow      : hidden;
+	text-overflow : ellipsis;
+	word-break    : break-all;
+	white-space   : nowrap;
+	//remember, for ellipsis to work, an explicit width must be set
 }

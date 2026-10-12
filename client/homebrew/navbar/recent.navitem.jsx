@@ -1,52 +1,116 @@
-const React = require('react');
-const createClass = require('create-react-class');
-const _ = require('lodash');
-const cx = require('classnames');
-const Moment = require('moment');
+import React from 'react';
+import createReactClass from 'create-react-class';
+import _ from 'lodash';
+import Moment from 'moment';
 
-const Nav = require('naturalcrit/nav/nav.jsx');
+import Nav from './nav.jsx';
 
-const VIEW_KEY = 'homebrewery-recently-viewed';
-const EDIT_KEY = 'homebrewery-recently-edited';
+const EDIT_KEY = 'HB_nav_recentlyEdited';
+const VIEW_KEY = 'HB_nav_recentlyViewed';
 
-const BaseItem = createClass({
+
+const RecentItems = createReactClass({
+	DisplayName     : 'RecentItems',
 	getDefaultProps : function() {
 		return {
-			storageKey  : '',
-			text        : '',
-			currentBrew : {
-				title : '',
-				id    : '',
-				url   : ''
-			}
+			storageKey : '',
+			showEdit   : false,
+			showView   : false
 		};
 	},
+
 	getInitialState : function() {
 		return {
 			showDropdown : false,
-			brews        : []
+			edit         : [],
+			view         : []
 		};
 	},
 
 	componentDidMount : function() {
-		let brews = JSON.parse(localStorage.getItem(this.props.storageKey) || '[]');
 
-		brews = _.filter(brews, (brew)=>{
-			return brew.id !== this.props.currentBrew.id;
-		});
-		if(this.props.currentBrew.id){
-			brews.unshift({
-				id    : this.props.currentBrew.id,
-				url   : this.props.currentBrew.url,
-				title : this.props.currentBrew.title,
+		//== Load recent items list ==//
+		let edited = JSON.parse(localStorage.getItem(EDIT_KEY) || '[]');
+		let viewed = JSON.parse(localStorage.getItem(VIEW_KEY) || '[]');
+
+		//== Add current brew to appropriate recent items list (depending on storageKey) ==//
+		if(this.props.storageKey == 'edit'){
+			let editId = this.props.brew.editId;
+			if(this.props.brew.googleId && !this.props.brew.stubbed){
+				editId = `${this.props.brew.googleId}${this.props.brew.editId}`;
+			}
+			edited = _.filter(edited, (brew)=>{
+				return brew.id !== editId;
+			});
+			edited.unshift({
+				id    : editId,
+				title : this.props.brew.title,
+				url   : `/edit/${editId}`,
 				ts    : Date.now()
 			});
 		}
-		brews = _.slice(brews, 0, 8);
-		localStorage.setItem(this.props.storageKey, JSON.stringify(brews));
+		if(this.props.storageKey == 'view'){
+			let shareId = this.props.brew.shareId;
+			if(this.props.brew.googleId && !this.props.brew.stubbed){
+				shareId = `${this.props.brew.googleId}${this.props.brew.shareId}`;
+			}
+			viewed = _.filter(viewed, (brew)=>{
+				return brew.id !== shareId;
+			});
+			viewed.unshift({
+				id    : shareId,
+				title : this.props.brew.title,
+				url   : `/share/${shareId}`,
+				ts    : Date.now()
+			});
+		}
+
+		//== Store the updated lists (up to 8 items each) ==//
+		edited = _.slice(edited, 0, 8);
+		viewed = _.slice(viewed, 0, 8);
+
+		localStorage.setItem(EDIT_KEY, JSON.stringify(edited));
+		localStorage.setItem(VIEW_KEY, JSON.stringify(viewed));
+
 		this.setState({
-			brews : brews
+			edit : edited,
+			view : viewed
 		});
+	},
+
+	componentDidUpdate : function(prevProps) {
+		if(prevProps.brew && this.props.brew.editId !== prevProps.brew.editId) {
+	 		let edited = JSON.parse(localStorage.getItem(EDIT_KEY) || '[]');
+			if(this.props.storageKey == 'edit') {
+				let prevEditId = prevProps.brew.editId;
+				if(prevProps.brew.googleId && !this.props.brew.stubbed){
+					prevEditId = `${prevProps.brew.googleId}${prevProps.brew.editId}`;
+				}
+
+				edited = _.filter(this.state.edit, (brew)=>{
+					return brew.id !== prevEditId;
+				});
+				let editId = this.props.brew.editId;
+				if(this.props.brew.googleId && !this.props.brew.stubbed){
+					editId = `${this.props.brew.googleId}${this.props.brew.editId}`;
+				}
+				edited.unshift({
+					id    : editId,
+					title : this.props.brew.title,
+					url   : `/edit/${editId}`,
+					ts    : Date.now()
+				});
+			}
+
+			//== Store the updated lists (up to 8 items each) ==//
+			edited = _.slice(edited, 0, 8);
+
+			localStorage.setItem(EDIT_KEY, JSON.stringify(edited));
+
+			this.setState({
+				edit : edited
+			});
+		}
 	},
 
 	handleDropdown : function(show){
@@ -55,146 +119,89 @@ const BaseItem = createClass({
 		});
 	},
 
-	renderDropdown : function(){
-		if(!this.state.showDropdown) return null;
+	removeItem : function(url, evt){
+		evt.preventDefault();
+		evt.stopPropagation();
 
-		const items = _.map(this.state.brews, (brew)=>{
-			return <a href={brew.url} className='item' key={brew.id} target='_blank' rel='noopener noreferrer'>
-				<span className='title'>{brew.title}</span>
-				<span className='time'>{Moment(brew.ts).fromNow()}</span>
-			</a>;
+		let edited = JSON.parse(localStorage.getItem(EDIT_KEY) || '[]');
+		let viewed = JSON.parse(localStorage.getItem(VIEW_KEY) || '[]');
+
+		edited = edited.filter((item)=>{ return (item.url !== url);});
+		viewed = viewed.filter((item)=>{ return (item.url !== url);});
+
+		localStorage.setItem(EDIT_KEY, JSON.stringify(edited));
+		localStorage.setItem(VIEW_KEY, JSON.stringify(viewed));
+
+		this.setState({
+			edit : edited,
+			view : viewed
 		});
 
-		return <div className='dropdown'>{items}</div>;
+	},
+
+	renderDropdown : function(){
+		// if(!this.state.showDropdown) return null;
+
+		const makeItems = (brews)=>{
+			return _.map(brews, (brew, i)=>{
+				return <a className='navItem' href={brew.url} key={`${brew.id}-${i}`} target='_blank' rel='noopener noreferrer' title={brew.title || '[ no title ]'}>
+					<span className='title'>{brew.title || '[ no title ]'}</span>
+					<span className='time'>{Moment(brew.ts).fromNow()}</span>
+					<div className='clear' title='Remove from Recents' onClick={(e)=>{this.removeItem(`${brew.url}`, e);}}><i className='fas fa-times'></i></div>
+				</a>;
+			});
+		};
+
+		return <>
+			{(this.props.showEdit && this.props.showView) ?
+				<Nav.item className='header'>edited</Nav.item> : null }
+			{this.props.showEdit ?
+				makeItems(this.state.edit) : null }
+			{(this.props.showEdit && this.props.showView) ?
+				<Nav.item className='header'>viewed</Nav.item>	: null }
+			{this.props.showView ?
+				makeItems(this.state.view) : null }
+		</>;
 	},
 
 	render : function(){
-		return <Nav.item icon='fa-clock-o' color='grey' className='recent'
-			onMouseEnter={()=>this.handleDropdown(true)}
-			onMouseLeave={()=>this.handleDropdown(false)}>
-			{this.props.text}
+		return <Nav.dropdown className='recent'>
+			<Nav.item icon='fas fa-history' color='grey' >
+				{this.props.text}
+			</Nav.item>
 			{this.renderDropdown()}
-		</Nav.item>;
-	},
+		</Nav.dropdown>;
+	}
 
 });
 
+export default {
 
+	edited : (props)=>{
+		return <RecentItems
+			brew={props.brew}
+			storageKey={props.storageKey}
+			text='recently edited'
+			showEdit={true}
+		/>;
+	},
 
-module.exports = {
-	viewed : createClass({
-		getDefaultProps : function() {
-			return {
-				brew : {
-					title   : '',
-					shareId : ''
-				}
-			};
-		},
-		render : function(){
-			return <BaseItem text='recently viewed' storageKey={VIEW_KEY}
-				currentBrew={{
-					id    : this.props.brew.shareId,
-					title : this.props.brew.title,
-					url   : `/share/${this.props.brew.shareId}`
-				}}
-			/>;
-		},
-	}),
+	viewed : (props)=>{
+		return <RecentItems
+			brew={props.brew}
+			storageKey={props.storageKey}
+			text='recently viewed'
+			showView={true}
+		/>;
+	},
 
-	edited : createClass({
-		getDefaultProps : function() {
-			return {
-				brew : {
-					title  : '',
-					editId : ''
-				}
-			};
-		},
-		render : function(){
-			return <BaseItem text='recently edited' storageKey={EDIT_KEY}
-				currentBrew={{
-					id    : this.props.brew.editId,
-					title : this.props.brew.title,
-					url   : `/edit/${this.props.brew.editId}`
-				}}
-			/>;
-		},
-	}),
-
-	both : createClass({
-		getDefaultProps : function() {
-			return {
-				errorId : null
-			};
-		},
-
-		getInitialState : function() {
-			return {
-				showDropdown : false,
-				edit         : [],
-				view         : []
-			};
-		},
-
-		componentDidMount : function() {
-
-			let edited = JSON.parse(localStorage.getItem(EDIT_KEY) || '[]');
-			let viewed = JSON.parse(localStorage.getItem(VIEW_KEY) || '[]');
-
-			if(this.props.errorId){
-				edited = _.filter(edited, (edit)=>{
-					return edit.id !== this.props.errorId;
-				});
-				viewed = _.filter(viewed, (view)=>{
-					return view.id !== this.props.errorId;
-				});
-
-				localStorage.setItem(EDIT_KEY, JSON.stringify(edited));
-				localStorage.setItem(VIEW_KEY, JSON.stringify(viewed));
-			}
-
-
-			this.setState({
-				edit : edited,
-				view : viewed
-			});
-		},
-
-		handleDropdown : function(show){
-			this.setState({
-				showDropdown : show
-			});
-		},
-
-		renderDropdown : function(){
-			if(!this.state.showDropdown) return null;
-
-			const makeItems = (brews)=>{
-				return _.map(brews, (brew)=>{
-					return <a href={brew.url} className='item' key={brew.id} target='_blank' rel='noopener noreferrer'>
-						<span className='title'>{brew.title}</span>
-						<span className='time'>{Moment(brew.ts).fromNow()}</span>
-					</a>;
-				});
-			};
-
-			return <div className='dropdown'>
-				<h4>edited</h4>
-				{makeItems(this.state.edit)}
-				<h4>viewed</h4>
-				{makeItems(this.state.view)}
-			</div>;
-		},
-
-		render : function(){
-			return <Nav.item icon='fa-clock-o' color='grey' className='recent'
-				onMouseEnter={()=>this.handleDropdown(true)}
-				onMouseLeave={()=>this.handleDropdown(false)}>
-				Recent brews
-				{this.renderDropdown()}
-			</Nav.item>;
-		}
-
-	})
+	both : (props)=>{
+		return <RecentItems
+			brew={props.brew}
+			storageKey={props.storageKey}
+			text='recent brews'
+			showEdit={true}
+			showView={true}
+		/>;
+	}
 };
